@@ -1,0 +1,32 @@
+when:
+  - event: [pull_request]
+  - event: push
+    branch:
+      - ${CI_REPO_DEFAULT_BRANCH}
+
+variables:
+  - &go_image 'golang:1.22'
+
+steps:
+  vendor:
+    image: *go_image
+    pull: true
+    commands:
+      - go mod vendor
+
+  lint:
+    image: golangci/golangci-lint:v1.57
+    pull: true
+    depends_on:
+      - vendor
+    commands:
+      - golangci-lint run
+
+  check-go-mod:
+    image: *go_image
+    depends_on:
+      - vendor
+    pull: true
+    commands:
+      - go mod tidy
+      - git diff --exit-code go.mod
