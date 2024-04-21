@@ -1,7 +1,7 @@
 package main
 
 import (
-	"goaegis/cmd/internal"
+	internal2 "goaegis/internal"
 	"log/slog"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -20,14 +20,14 @@ var cmdTUI = &cli.Command{
 
 		logger.Debug("trying to read vault file...", slog.String("path", path))
 
-		vault, err := internal.NewVaultFromFile(path)
+		vault, err := internal2.NewVaultFromFile(path)
 		if err != nil {
 			return err
 		}
 
 		logger.Debug("vault file read successfully", slog.String("path", path))
 
-		if _, err := tea.NewProgram(internal.NewUI(vault)).Run(); err != nil {
+		if _, err := tea.NewProgram(internal2.NewUI(vault)).Run(); err != nil {
 			return err
 		}
 
