@@ -1,4 +1,4 @@
-module goaegis
+module gitea.dwysokinski.me/Kichiyaki/goaegis
 
 go 1.22
 

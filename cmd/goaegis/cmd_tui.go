@@ -1,8 +1,9 @@
 package main
 
 import (
-	internal2 "goaegis/internal"
 	"log/slog"
+
+	"gitea.dwysokinski.me/Kichiyaki/goaegis/internal"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/urfave/cli/v2"
@@ -20,14 +21,14 @@ var cmdTUI = &cli.Command{
 
 		logger.Debug("trying to read vault file...", slog.String("path", path))
 
-		vault, err := internal2.NewVaultFromFile(path)
+		vault, err := internal.NewVaultFromFile(path)
 		if err != nil {
 			return err
 		}
 
 		logger.Debug("vault file read successfully", slog.String("path", path))
 
-		if _, err := tea.NewProgram(internal2.NewUI(vault)).Run(); err != nil {
+		if _, err := tea.NewProgram(internal.NewUI(vault)).Run(); err != nil {
 			return err
 		}
 
