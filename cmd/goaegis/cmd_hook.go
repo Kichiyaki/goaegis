@@ -9,7 +9,7 @@ import (
 
 var cmdHook = &cli.Command{
 	Name:  "hook",
-	Usage: "Print the shell function used to execute goaegis",
+	Usage: "Prints the shell function used to execute " + appName,
 	Subcommands: []*cli.Command{
 		{
 			Name: "bash",

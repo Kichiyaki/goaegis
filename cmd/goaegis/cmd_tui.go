@@ -28,7 +28,7 @@ var cmdTUI = &cli.Command{
 
 		logger.Debug("vault file read successfully", slog.String("path", path))
 
-		if _, err := tea.NewProgram(internal.NewUI(vault)).Run(); err != nil {
+		if _, err := tea.NewProgram(internal.NewUI(c.App.Name, vault)).Run(); err != nil {
 			return err
 		}
 

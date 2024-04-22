@@ -10,13 +10,15 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+const aegisVaultFileName = ".aegis_vault.json"
+
 var (
 	appFlagPath = &cli.PathFlag{
 		Name:        "path",
 		Aliases:     []string{"p"},
 		Usage:       "path to vault file",
 		Required:    false,
-		DefaultText: "$HOME/.aegis_vault.json",
+		DefaultText: "$HOME/" + aegisVaultFileName,
 	}
 	appFlags = []cli.Flag{appFlagPath}
 )
@@ -31,6 +33,7 @@ func newApp(name, version string) *appWrapper {
 	app.Name = name
 	app.HelpName = name
 	app.Version = version
+	app.Usage = "Two-Factor Authentication (2FA) App compatible with Aegis vault format"
 	app.Commands = []*cli.Command{cmdHook, cmdTUI}
 	app.DefaultCommand = cmdTUI.Name
 	app.EnableBashCompletion = true
@@ -59,5 +62,5 @@ func getVaultPath(c *cli.Context) (string, error) {
 		return "", fmt.Errorf("couldn't get user home dir: %w", err)
 	}
 
-	return path.Join(dirname, ".aegis_vault.json"), nil
+	return path.Join(dirname, aegisVaultFileName), nil
 }

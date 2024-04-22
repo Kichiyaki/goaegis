@@ -1,7 +1,10 @@
 package internal
 
 import (
+	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -23,9 +26,10 @@ type UI struct {
 	db            DB
 	list          list.Model
 	passwordInput textinput.Model
+	passwordError error
 }
 
-func NewUI(vault Vault) UI {
+func NewUI(appName string, vault Vault) UI {
 	passwordInput := textinput.New()
 	passwordInput.Focus()
 	passwordInput.EchoMode = textinput.EchoPassword
@@ -33,7 +37,7 @@ func NewUI(vault Vault) UI {
 	passwordInput.Width = 20
 
 	l := list.New(nil, list.NewDefaultDelegate(), 0, 0)
-	l.Title = "GoAegis"
+	l.Title = appName
 	l.SetShowPagination(false)
 
 	return UI{
@@ -55,23 +59,37 @@ type refreshListMsg struct {
 }
 
 func (m UI) Update(teaMsg tea.Msg) (tea.Model, tea.Cmd) {
+	if msg, ok := teaMsg.(tea.KeyMsg); ok {
+		if slices.Contains([]tea.KeyType{tea.KeyCtrlC, tea.KeyEsc}, msg.Type) {
+			return m, tea.Quit
+		}
+	}
+
+	switch m.view {
+	case viewPassword:
+		return m.updatePasswordView(teaMsg)
+	case viewList:
+		return m.updateListView(teaMsg)
+	default:
+		return m, tea.Quit
+	}
+}
+
+func (m UI) updatePasswordView(teaMsg tea.Msg) (tea.Model, tea.Cmd) {
 	var passwordInputCmd tea.Cmd
 	//nolint:revive
 	m.passwordInput, passwordInputCmd = m.passwordInput.Update(teaMsg)
 
 	var cmd tea.Cmd
 
-	switch msg := teaMsg.(type) {
-	case tea.KeyMsg:
-		//nolint:exhaustive
-		switch msg.Type {
-		case tea.KeyCtrlC, tea.KeyEsc:
-			return m, tea.Quit
-		case tea.KeyEnter:
+	if msg, ok := teaMsg.(tea.KeyMsg); ok {
+		if msg.Type == tea.KeyEnter {
 			var err error
 			//nolint:revive
 			m.db, err = m.vault.DecryptDB([]byte(m.passwordInput.Value()))
 			if err != nil {
+				//nolint:revive
+				m.passwordError = errors.New("invalid password")
 				m.passwordInput.Reset()
 			} else {
 				//nolint:revive
@@ -82,8 +100,22 @@ func (m UI) Update(teaMsg tea.Msg) (tea.Model, tea.Cmd) {
 				)
 			}
 		}
+	}
+
+	if m.passwordInput.Value() != "" && m.passwordError != nil {
+		//nolint:revive
+		m.passwordError = nil
+	}
+
+	return m, tea.Batch(passwordInputCmd, cmd)
+}
+
+func (m UI) updateListView(teaMsg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg := teaMsg.(type) {
 	case tea.WindowSizeMsg:
-		h, v := docStyle.GetFrameSize()
+		h, v := listStyle.GetFrameSize()
 		m.list.SetSize(msg.Width-h, msg.Height-v)
 	case refreshListMsg:
 		cmd = tea.Batch(
@@ -96,7 +128,7 @@ func (m UI) Update(teaMsg tea.Msg) (tea.Model, tea.Cmd) {
 	//nolint:revive
 	m.list, listCmd = m.list.Update(teaMsg)
 
-	return m, tea.Batch(passwordInputCmd, cmd, listCmd)
+	return m, tea.Batch(cmd, listCmd)
 }
 
 const tickDuration = time.Second
@@ -107,18 +139,29 @@ func (m UI) tick() tea.Cmd {
 	})
 }
 
-var docStyle = lipgloss.NewStyle().Margin(1, 2)
+var (
+	listStyle = lipgloss.NewStyle().Margin(1, 2)
+	helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Margin(1, 0)
+	errStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))
+)
 
 func (m UI) View() string {
 	if m.view == viewList {
-		return docStyle.Render(m.list.View())
+		return listStyle.Render(m.list.View())
 	}
 
-	return fmt.Sprintf(
-		"Enter password:\n\n%s\n\n%s",
-		m.passwordInput.View(),
-		"(ctrl+c to quit)",
-	) + "\n"
+	var b strings.Builder
+
+	b.WriteString("Enter password:\n\n")
+	b.WriteString(m.passwordInput.View())
+	b.WriteString("\n")
+	if m.passwordError != nil {
+		b.WriteString(errStyle.Render(m.passwordError.Error()))
+	}
+	b.WriteString("\n")
+	b.WriteString(helpStyle.Render("(ctrl+c to quit)"))
+
+	return b.String()
 }
 
 type listItem struct {
