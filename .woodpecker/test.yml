@@ -14,6 +14,14 @@ steps:
     commands:
       - go mod vendor
 
+  test:
+    image: *go_image
+    depends_on:
+      - vendor
+    pull: true
+    commands:
+      - go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+
   lint:
     image: golangci/golangci-lint:v1.57
     pull: true
