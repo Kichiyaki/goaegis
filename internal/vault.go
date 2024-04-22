@@ -10,7 +10,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
+	"time"
 
+	"github.com/pquerna/otp"
+	"github.com/pquerna/otp/totp"
 	"golang.org/x/crypto/scrypt"
 )
 
@@ -160,7 +164,73 @@ type DBEntry struct {
 	Info   DBEntryInfo `json:"info"`
 }
 
+const (
+	typeTOTP        = "TOTP"
+	algorithmSHA1   = "SHA1"
+	algorithmSHA256 = "SHA256"
+	algorithmSHA512 = "SHA512"
+	algorithmMD5    = "MD5"
+	digitsSix       = 6
+	digitsEight     = 8
+)
+
+var ErrUnsupportedEntryType = errors.New("unsupported entry type")
+
+func (e DBEntry) GenerateOTP(t time.Time) (string, int64, error) {
+	algorithm, err := parseAlgorithm(e.Info.Algo)
+	if err != nil {
+		return "", 0, err
+	}
+
+	digits, err := parseDigits(e.Info.Digits)
+	if err != nil {
+		return "", 0, err
+	}
+
+	switch strings.ToUpper(e.Type) {
+	case typeTOTP:
+		code, totpErr := totp.GenerateCodeCustom(e.Info.Secret, t, totp.ValidateOpts{
+			Algorithm: algorithm,
+			Period:    uint(e.Info.Period),
+			Digits:    digits,
+		})
+		if totpErr != nil {
+			return "", 0, fmt.Errorf("couldn't generate totp: %w", totpErr)
+		}
+		period := int64(e.Info.Period)
+		return code, period - (t.Unix() % period), nil
+	default:
+		return "", 0, fmt.Errorf("%w: %s", ErrUnsupportedEntryType, e.Type)
+	}
+}
+
 type DB struct {
 	Version int       `json:"version"`
 	Entries []DBEntry `json:"entries"`
+}
+
+func parseAlgorithm(algorithm string) (otp.Algorithm, error) {
+	switch strings.ToUpper(algorithm) {
+	case algorithmSHA1:
+		return otp.AlgorithmSHA1, nil
+	case algorithmSHA256:
+		return otp.AlgorithmSHA256, nil
+	case algorithmSHA512:
+		return otp.AlgorithmSHA512, nil
+	case algorithmMD5:
+		return otp.AlgorithmMD5, nil
+	default:
+		return 0, fmt.Errorf("unsupported algorithm: %s", algorithm)
+	}
+}
+
+func parseDigits(digits uint8) (otp.Digits, error) {
+	switch digits {
+	case digitsSix:
+		return otp.DigitsSix, nil
+	case digitsEight:
+		return otp.DigitsEight, nil
+	default:
+		return 0, fmt.Errorf("unsupported digits: %d", digits)
+	}
 }

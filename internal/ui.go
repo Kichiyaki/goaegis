@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -29,6 +31,11 @@ type UI struct {
 	passwordError error
 }
 
+var keyBindingCopy = key.NewBinding(
+	key.WithKeys("enter"),
+	key.WithHelp("enter", "copy"),
+)
+
 func NewUI(appName string, vault Vault) UI {
 	passwordInput := textinput.New()
 	passwordInput.Focus()
@@ -39,6 +46,19 @@ func NewUI(appName string, vault Vault) UI {
 	l := list.New(nil, list.NewDefaultDelegate(), 0, 0)
 	l.Title = appName
 	l.SetShowPagination(false)
+
+	if !clipboard.Unsupported {
+		l.AdditionalShortHelpKeys = func() []key.Binding {
+			return []key.Binding{
+				keyBindingCopy,
+			}
+		}
+		l.AdditionalFullHelpKeys = func() []key.Binding {
+			return []key.Binding{
+				keyBindingCopy,
+			}
+		}
+	}
 
 	return UI{
 		view:          viewPassword,
@@ -122,6 +142,20 @@ func (m UI) updateListView(teaMsg tea.Msg) (tea.Model, tea.Cmd) {
 			m.list.SetItems(newListItems(m.db, msg.t)),
 			m.tick(),
 		)
+	case tea.KeyMsg:
+		if msg.Type != tea.KeyEnter || clipboard.Unsupported {
+			break
+		}
+
+		item, ok := m.list.SelectedItem().(listItem)
+		if !ok {
+			break
+		}
+
+		otp, _, err := item.entry.GenerateOTP(item.t)
+		if err == nil {
+			_ = clipboard.WriteAll(otp)
+		}
 	}
 
 	var listCmd tea.Cmd
@@ -165,30 +199,30 @@ func (m UI) View() string {
 }
 
 type listItem struct {
-	e DBEntry
-	t time.Time
+	entry DBEntry
+	t     time.Time
 }
 
 func newListItems(db DB, t time.Time) []list.Item {
 	items := make([]list.Item, 0, len(db.Entries))
 	for _, e := range db.Entries {
 		items = append(items, listItem{
-			e: e,
-			t: t,
+			entry: e,
+			t:     t,
 		})
 	}
 	return items
 }
 
 func (i listItem) Title() string {
-	if i.e.Issuer == "" {
-		return i.e.Name
+	if i.entry.Issuer == "" {
+		return i.entry.Name
 	}
-	return i.e.Issuer + " - " + i.e.Name
+	return i.entry.Issuer + " - " + i.entry.Name
 }
 
 func (i listItem) Description() string {
-	otp, remaining, err := generateOTP(i.e, i.t)
+	otp, remaining, err := i.entry.GenerateOTP(i.t)
 	if err != nil {
 		return err.Error()
 	}
