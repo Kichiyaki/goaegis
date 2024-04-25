@@ -8,8 +8,6 @@ variables:
 steps:
   release:
     image: *goreleaser_image
-    depends_on:
-      - generate
     commands:
       - goreleaser release --clean
     secrets:
