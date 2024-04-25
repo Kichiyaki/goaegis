@@ -3,11 +3,11 @@ package internal
 import (
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
 	"github.com/atotto/clipboard"
+	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -23,18 +23,14 @@ const (
 )
 
 type UI struct {
-	view          view
-	vault         Vault
-	db            DB
-	list          list.Model
-	passwordInput textinput.Model
-	passwordError error
+	view             view
+	vault            Vault
+	db               DB
+	list             list.Model
+	passwordViewHelp help.Model
+	passwordInput    textinput.Model
+	passwordError    error
 }
-
-var keyBindingCopy = key.NewBinding(
-	key.WithKeys("enter"),
-	key.WithHelp("enter", "copy"),
-)
 
 func NewUI(appName string, vault Vault) UI {
 	passwordInput := textinput.New()
@@ -60,11 +56,14 @@ func NewUI(appName string, vault Vault) UI {
 		}
 	}
 
+	l.KeyMap.Quit = keyBindingQuit
+
 	return UI{
-		view:          viewPassword,
-		vault:         vault,
-		list:          l,
-		passwordInput: passwordInput,
+		view:             viewPassword,
+		vault:            vault,
+		list:             l,
+		passwordInput:    passwordInput,
+		passwordViewHelp: help.New(),
 	}
 }
 
@@ -78,59 +77,33 @@ type refreshListMsg struct {
 	t time.Time
 }
 
+var (
+	keyBindingCopy = key.NewBinding(
+		key.WithKeys("enter"),
+		key.WithHelp("enter", "copy to clipboard"),
+		key.WithDisabled(),
+	)
+	keyBindingUnlock = key.NewBinding(
+		key.WithKeys("enter"),
+		key.WithHelp("enter", "unlock vault"),
+	)
+	keyBindingQuit = key.NewBinding(
+		key.WithKeys("esc", "ctrl+c"),
+		key.WithHelp("esc/ctrl+c", "quit"),
+	)
+)
+
+//nolint:gocyclo
 func (m UI) Update(teaMsg tea.Msg) (tea.Model, tea.Cmd) {
-	if msg, ok := teaMsg.(tea.KeyMsg); ok {
-		if slices.Contains([]tea.KeyType{tea.KeyCtrlC, tea.KeyEsc}, msg.Type) {
-			return m, tea.Quit
-		}
-	}
-
-	switch m.view {
-	case viewPassword:
-		return m.updatePasswordView(teaMsg)
-	case viewList:
-		return m.updateListView(teaMsg)
-	default:
-		return m, tea.Quit
-	}
-}
-
-func (m UI) updatePasswordView(teaMsg tea.Msg) (tea.Model, tea.Cmd) {
 	var passwordInputCmd tea.Cmd
 	//nolint:revive
 	m.passwordInput, passwordInputCmd = m.passwordInput.Update(teaMsg)
-
-	var cmd tea.Cmd
-
-	if msg, ok := teaMsg.(tea.KeyMsg); ok {
-		if msg.Type == tea.KeyEnter {
-			var err error
-			//nolint:revive
-			m.db, err = m.vault.DecryptDB([]byte(m.passwordInput.Value()))
-			if err != nil {
-				//nolint:revive
-				m.passwordError = errors.New("invalid password")
-				m.passwordInput.Reset()
-			} else {
-				//nolint:revive
-				m.view = viewList
-				cmd = tea.Batch(
-					m.list.SetItems(newListItems(m.db, time.Now())),
-					m.tick(),
-				)
-			}
-		}
-	}
 
 	if m.passwordInput.Value() != "" && m.passwordError != nil {
 		//nolint:revive
 		m.passwordError = nil
 	}
 
-	return m, tea.Batch(passwordInputCmd, cmd)
-}
-
-func (m UI) updateListView(teaMsg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := teaMsg.(type) {
@@ -143,18 +116,37 @@ func (m UI) updateListView(teaMsg tea.Msg) (tea.Model, tea.Cmd) {
 			m.tick(),
 		)
 	case tea.KeyMsg:
-		if msg.Type != tea.KeyEnter || clipboard.Unsupported {
-			break
-		}
+		switch {
+		case key.Matches(msg, keyBindingQuit):
+			return m, tea.Quit
+		case key.Matches(msg, keyBindingUnlock):
+			var err error
+			//nolint:revive
+			m.db, err = m.vault.DecryptDB([]byte(m.passwordInput.Value()))
+			if err != nil {
+				//nolint:revive
+				m.passwordError = errors.New("invalid password")
+				m.passwordInput.Reset()
+			} else {
+				//nolint:revive
+				m.view = viewList
+				keyBindingUnlock.SetEnabled(false)
+				keyBindingCopy.SetEnabled(true)
+				cmd = tea.Batch(
+					m.list.SetItems(newListItems(m.db, time.Now())),
+					m.tick(),
+				)
+			}
+		case key.Matches(msg, keyBindingCopy) && !clipboard.Unsupported:
+			item, ok := m.list.SelectedItem().(listItem)
+			if !ok {
+				break
+			}
 
-		item, ok := m.list.SelectedItem().(listItem)
-		if !ok {
-			break
-		}
-
-		otp, _, err := item.entry.GenerateOTP(item.t)
-		if err == nil {
-			_ = clipboard.WriteAll(otp)
+			otp, _, err := item.entry.GenerateOTP(item.t)
+			if err == nil {
+				_ = clipboard.WriteAll(otp)
+			}
 		}
 	}
 
@@ -162,7 +154,7 @@ func (m UI) updateListView(teaMsg tea.Msg) (tea.Model, tea.Cmd) {
 	//nolint:revive
 	m.list, listCmd = m.list.Update(teaMsg)
 
-	return m, tea.Batch(cmd, listCmd)
+	return m, tea.Batch(passwordInputCmd, cmd, listCmd)
 }
 
 const tickDuration = time.Second
@@ -175,7 +167,6 @@ func (m UI) tick() tea.Cmd {
 
 var (
 	listStyle = lipgloss.NewStyle().Margin(1, 2)
-	helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Margin(1, 0)
 	errStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))
 )
 
@@ -193,7 +184,10 @@ func (m UI) View() string {
 		b.WriteString(errStyle.Render(m.passwordError.Error()))
 	}
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("(ctrl+c to quit)"))
+	b.WriteString(m.passwordViewHelp.ShortHelpView([]key.Binding{
+		keyBindingUnlock,
+		keyBindingQuit,
+	}))
 
 	return b.String()
 }
