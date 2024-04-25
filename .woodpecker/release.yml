@@ -3,16 +3,9 @@ when:
   ref: refs/tags/v*
 
 variables:
-  - &go_image 'golang:1.22'
   - &goreleaser_image 'goreleaser/goreleaser:v1.25.1'
 
 steps:
-  generate:
-    image: *go_image
-    pull: true
-    commands:
-      - make generate
-
   release:
     image: *goreleaser_image
     depends_on:
