@@ -9,7 +9,7 @@ require (
 	github.com/charmbracelet/lipgloss v0.10.0
 	github.com/pquerna/otp v1.4.0
 	github.com/stretchr/testify v1.9.0
-	github.com/urfave/cli/v2 v2.27.1
+	github.com/urfave/cli/v2 v2.27.2
 	golang.org/x/crypto v0.22.0
 )
 
