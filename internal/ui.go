@@ -167,9 +167,8 @@ func (m *UI) handleBrowsingList(teaMsg tea.Msg) tea.Cmd {
 
 			converted.t = msg.t
 		}
-		cmd = tea.Batch(
-			m.tick(),
-		)
+
+		cmd = m.tick()
 	case tea.KeyMsg:
 		if key.Matches(msg, keyBindingCopy) && !clipboard.Unsupported {
 			item, ok := m.list.SelectedItem().(*listItem)
