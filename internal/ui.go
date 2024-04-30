@@ -15,15 +15,34 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-type view uint8
+type state uint8
 
 const (
-	viewPassword view = iota + 1
-	viewList
+	stateEnteringPassword state = iota + 1
+	stateBrowsingList
+)
+
+var (
+	keyBindingCopy = key.NewBinding(
+		key.WithKeys("enter"),
+		key.WithHelp("enter", "copy to clipboard"),
+	)
+	keyBindingUnlock = key.NewBinding(
+		key.WithKeys("enter"),
+		key.WithHelp("enter", "unlock vault"),
+	)
+	keyBindingQuit = key.NewBinding(
+		key.WithKeys("esc", "ctrl+c"),
+		key.WithHelp("esc/ctrl+c", "quit"),
+	)
+	keyClearFilter = key.NewBinding(
+		key.WithKeys("c"),
+		key.WithHelp("c", "clear filter"),
+	)
 )
 
 type UI struct {
-	view             view
+	state            state
 	vault            Vault
 	db               DB
 	list             list.Model
@@ -57,9 +76,10 @@ func NewUI(appName string, vault Vault) UI {
 	}
 
 	l.KeyMap.Quit = keyBindingQuit
+	l.KeyMap.ClearFilter = keyClearFilter
 
 	return UI{
-		view:             viewPassword,
+		state:            stateEnteringPassword,
 		vault:            vault,
 		list:             l,
 		passwordInput:    passwordInput,
@@ -77,48 +97,37 @@ type refreshListMsg struct {
 	t time.Time
 }
 
-var (
-	keyBindingCopy = key.NewBinding(
-		key.WithKeys("enter"),
-		key.WithHelp("enter", "copy to clipboard"),
-		key.WithDisabled(),
-	)
-	keyBindingUnlock = key.NewBinding(
-		key.WithKeys("enter"),
-		key.WithHelp("enter", "unlock vault"),
-	)
-	keyBindingQuit = key.NewBinding(
-		key.WithKeys("esc", "ctrl+c"),
-		key.WithHelp("esc/ctrl+c", "quit"),
-	)
-)
-
 //nolint:gocyclo
 func (m UI) Update(teaMsg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	if msg, ok := teaMsg.(tea.WindowSizeMsg); ok {
+		h, v := listStyle.GetFrameSize()
+		m.list.SetSize(msg.Width-h, msg.Height-v)
+	}
+
+	return m, tea.Batch(cmd, m.handleEnteringPassword(teaMsg), m.handleBrowsingList(teaMsg))
+}
+
+func (m *UI) handleEnteringPassword(teaMsg tea.Msg) tea.Cmd {
+	if m.state != stateEnteringPassword {
+		return nil
+	}
+
 	var passwordInputCmd tea.Cmd
-	//nolint:revive
 	m.passwordInput, passwordInputCmd = m.passwordInput.Update(teaMsg)
 
 	if m.passwordInput.Value() != "" && m.passwordError != nil {
-		//nolint:revive
 		m.passwordError = nil
 	}
 
 	var cmd tea.Cmd
 
 	switch msg := teaMsg.(type) {
-	case tea.WindowSizeMsg:
-		h, v := listStyle.GetFrameSize()
-		m.list.SetSize(msg.Width-h, msg.Height-v)
-	case refreshListMsg:
-		cmd = tea.Batch(
-			m.list.SetItems(newListItems(m.db, msg.t)),
-			m.tick(),
-		)
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, keyBindingQuit):
-			return m, tea.Quit
+			return tea.Quit
 		case key.Matches(msg, keyBindingUnlock):
 			var err error
 			//nolint:revive
@@ -129,16 +138,41 @@ func (m UI) Update(teaMsg tea.Msg) (tea.Model, tea.Cmd) {
 				m.passwordInput.Reset()
 			} else {
 				//nolint:revive
-				m.view = viewList
-				keyBindingUnlock.SetEnabled(false)
-				keyBindingCopy.SetEnabled(true)
+				m.state = stateBrowsingList
 				cmd = tea.Batch(
 					m.list.SetItems(newListItems(m.db, time.Now())),
 					m.tick(),
 				)
 			}
-		case key.Matches(msg, keyBindingCopy) && !clipboard.Unsupported:
-			item, ok := m.list.SelectedItem().(listItem)
+		}
+	}
+
+	return tea.Batch(passwordInputCmd, cmd)
+}
+
+func (m *UI) handleBrowsingList(teaMsg tea.Msg) tea.Cmd {
+	if m.state != stateBrowsingList {
+		return nil
+	}
+
+	var cmd tea.Cmd
+
+	switch msg := teaMsg.(type) {
+	case refreshListMsg:
+		for _, i := range m.list.Items() {
+			converted, ok := i.(*listItem)
+			if !ok {
+				continue
+			}
+
+			converted.t = msg.t
+		}
+		cmd = tea.Batch(
+			m.tick(),
+		)
+	case tea.KeyMsg:
+		if key.Matches(msg, keyBindingCopy) && !clipboard.Unsupported {
+			item, ok := m.list.SelectedItem().(*listItem)
 			if !ok {
 				break
 			}
@@ -154,7 +188,7 @@ func (m UI) Update(teaMsg tea.Msg) (tea.Model, tea.Cmd) {
 	//nolint:revive
 	m.list, listCmd = m.list.Update(teaMsg)
 
-	return m, tea.Batch(passwordInputCmd, cmd, listCmd)
+	return tea.Batch(listCmd, cmd)
 }
 
 const tickDuration = time.Second
@@ -171,7 +205,7 @@ var (
 )
 
 func (m UI) View() string {
-	if m.view == viewList {
+	if m.state == stateBrowsingList {
 		return listStyle.Render(m.list.View())
 	}
 
@@ -200,7 +234,7 @@ type listItem struct {
 func newListItems(db DB, t time.Time) []list.Item {
 	items := make([]list.Item, 0, len(db.Entries))
 	for _, e := range db.Entries {
-		items = append(items, listItem{
+		items = append(items, &listItem{
 			entry: e,
 			t:     t,
 		})
