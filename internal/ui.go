@@ -123,8 +123,7 @@ func (m *UI) handleEnteringPassword(teaMsg tea.Msg) tea.Cmd {
 
 	var cmd tea.Cmd
 
-	switch msg := teaMsg.(type) {
-	case tea.KeyMsg:
+	if msg, ok := teaMsg.(tea.KeyMsg); ok {
 		switch {
 		case key.Matches(msg, keyBindingQuit):
 			return tea.Quit
