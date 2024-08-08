@@ -20,7 +20,7 @@
 ## Installation
 
 ### Linux/Windows
-You can download prebuild binaries from [this page](https://gitea.dwysokinski.me/Kichiyaki/goaegis/releases).
+You can download prebuilt binaries from [this page](https://gitea.dwysokinski.me/Kichiyaki/goaegis/releases).
 
 ### go install
 
