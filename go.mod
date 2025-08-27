@@ -8,7 +8,7 @@ require (
 	github.com/charmbracelet/bubbletea v0.27.0
 	github.com/charmbracelet/lipgloss v0.11.0
 	github.com/pquerna/otp v1.4.0
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.11.1
 	github.com/urfave/cli/v2 v2.27.2
 	golang.org/x/crypto v0.28.0
 )
